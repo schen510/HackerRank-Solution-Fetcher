@@ -5,6 +5,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
+import json
+import sys
 
 def GetElement(driver, searchmethod, value):
     try:
@@ -32,42 +34,29 @@ def getUserNameAndPassword():
     return payload
 
 def createSession(load):
-    options = webdriver.ChromeOptions()
-    options.add_argument("--kiosk")
-
-    driver = webdriver.Chrome('/Users/schen/Downloads/chromedriver', chrome_options=options)
+    driver = webdriver.PhantomJS()
+    driver.set_window_size(1120, 550)
     driver.get("http://www.hackerrank.com/")
 
-    try:
-        loginButton = driver.find_element_by_link_text('Log In')
-        loginButton.click()
+    loginButton = driver.find_element_by_link_text('Log In')
+    loginButton.click()
 
-        loginField = GetElement(driver, By.XPATH, "//input[@id='login']")
-        loginField.send_keys(load['login'])
-        print("Sent UserName")
+    loginField = GetElement(driver, By.XPATH, "//input[@id='login']")
+    loginField.send_keys(load['login'])
+    time.sleep(1)
 
-        passWordField = GetElement(driver, By.XPATH, "//input[@id='password' and @data-attr2='Login']")
-        passWordField.send_keys(load['password'])
-        print("Sent PW")
+    passWordField = GetElement(driver, By.XPATH, "//input[@id='password' and @data-attr2='Login']")
+    passWordField.send_keys(load['password'])
+    time.sleep(1)
 
-        submitButton = GetElement(driver, By.XPATH, "//button[text()='Log In']")
-        submitButton.click()
-        print("Sent Click")
+    submitButton = GetElement(driver, By.XPATH, "//button[text()='Log In']")
+    submitButton.click()
 
-        dropDown = GetElement(driver, By.XPATH, "//a[span='stanleychen510']")
-        dropDown.click()
+    driver.get("https://www.hackerrank.com/submissions/grouped")
 
-        submissionlink = GetElement(driver, By.LINK_TEXT, "Submissions")
-        submissionlink.click()
-
-        sortByChallengeButton = GetElement(driver, By.XPATH, "//span[text()='Sort by Challenge']/..")
-        if not ('active' in sortByChallengeButton.get_attribute('class')):
-            sortByChallengeButton.click()
-
-    except:
-        print("Selenium ran into an exception.")
-        driver.close()
-        return None
+    sortByChallengeButton = GetElement(driver, By.XPATH, "//span[text()='Sort by Challenge']/..")
+    if not ('active' in sortByChallengeButton.get_attribute('class')):
+        sortByChallengeButton.click()
 
     return driver
 
@@ -96,11 +85,14 @@ def createAllChallengeLinks(driver):
 def navigateAndScrape(driver, links, github):
     for link in links.keys():
         if (os.path.isdir(github + link)):
-            print("Folder %s exists. Skipping folder creation." %(link))
+            print("INFO - Folder %s exists. Skipping folder creation." %(link))
         else:
-            print("Folder %s does not exist. Setting up Folder" %(link))
+            print("INFO - Folder %s does not exist. Setting up Folder" %(link))
             os.makedirs(github + link)
+
+        print("INFO - Navigating to %s" %(links[link]))
         driver.get(links[link])
+        time.sleep(1)
         source = driver.page_source
         soup = BeautifulSoup(source, "lxml")
         soup.encode('utf-8')
@@ -110,8 +102,21 @@ def navigateAndScrape(driver, links, github):
                 codeText = line.find("span", attrs={'role': 'presentation'})
                 code = (codeText.text).strip(u'\u200b').replace(u'\xa0', u'')
                 f.write(code + "\n")
+        print("INFO - Finished copying code for %s" %(link))
 
 def main():
+    if len(sys.argv) < 2:
+       print "Usage: python HackerRankAutoRepoUpdate.py [CONFIG_FILE]"
+       return 0
+
+    #reads if the config file is in this 
+    if os.path.isfile(sys.argv[1]):
+        with open(sys.argv[1], 'r') as configJson:
+            configLoad = json.load(configJson)
+    else:
+        "INFO - Configuration file does not exist. Ending execution."
+        return 0
+
     loginInfo = getUserNameAndPassword()
     driver = createSession(loginInfo)
     if not(driver):
@@ -122,7 +127,7 @@ def main():
     if not(links):
         print("INFO - No links on your submissions page for this account.")
 
-    navigateAndScrape(driver, links, '/Users/schen/Documents/stanley_repo/Hacker Rank Solutions/')
+    navigateAndScrape(driver, links, configLoad['hacker_rank_solution_folder'])
 
 
 if __name__ == '__main__':

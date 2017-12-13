@@ -1,5 +1,7 @@
 # Password Text Files
 pass.txt
+*.json
+*.log
 
 # Prerequisites
 *.d
