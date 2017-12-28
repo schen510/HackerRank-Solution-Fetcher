@@ -7,6 +7,8 @@ import time
 import os
 import json
 import sys
+import git
+import datetime
 
 def GetElement(driver, searchmethod, value):
     try:
@@ -129,6 +131,17 @@ def main():
 
     navigateAndScrape(driver, links, configLoad['hacker_rank_solution_folder'])
 
+    if configLoad['push_to_github']:
+        print "Push changes to Github branch enabled. Starting the process."
+        repo = git.Repo(configLoad['hacker_rank_solution_folder'])
+        print repo.git.status()
+        if 'Changes not staged for commit:' in repo.git.status():
+            print "Uncommitted changes. Need to commit."
+            repo.git.add('--all')
+            repo.git.commit(m=('Automated Update after fetching solutions on %s' %(datetime.datetime.now().strftime("%Y-%m-%d"))))
+            repo.git.push("origin", "master")
+        else:
+            print "No changes found. Ending Github update process."
 
 if __name__ == '__main__':
     main()
