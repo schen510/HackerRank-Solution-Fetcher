@@ -21,7 +21,10 @@ def GetElements(driver, searchmethod, value):
     try:
         webElements = WebDriverWait(driver, 5).until(EC.visibility_of_all_elements_located((searchmethod, value)))
     except:
-        return None
+        try:
+            webElements = WebDriverWait(driver, 5).until(EC.presence_of_all_elements_located((searchmethod, value)))
+        except:
+            return None
     return webElements
 
 def getUserNameAndPassword():
@@ -35,10 +38,13 @@ def getUserNameAndPassword():
 
     return payload
 
-def createSession(load):
-    driver = webdriver.PhantomJS()
-    driver.set_window_size(1120, 550)
+def createSession(load,chromedriver):
+    options = webdriver.ChromeOptions()
+    options.add_argument('--headless')
+    options.add_argument("--window-size=1920,1080")
+    driver = webdriver.Chrome(chromedriver, chrome_options=options)
     driver.get("http://www.hackerrank.com/")
+    time.sleep(1)
 
     loginButton = driver.find_element_by_link_text('Log In')
     loginButton.click()
@@ -51,8 +57,9 @@ def createSession(load):
     passWordField.send_keys(load['password'])
     time.sleep(1)
 
-    submitButton = GetElement(driver, By.XPATH, "//button[text()='Log In']")
+    submitButton = GetElement(driver, By.XPATH, "//button[text()='Log In' and @data-analytics='LoginPassword']")
     submitButton.click()
+    time.sleep(2)
 
     driver.get("https://www.hackerrank.com/submissions/grouped")
 
@@ -62,7 +69,7 @@ def createSession(load):
 
     return driver
 
-def createAllChallengeLinks(driver):
+def createAllChallengeLinks(driver, github):
     dictionaryOfProblems = {}
 
     while True:
@@ -73,7 +80,30 @@ def createAllChallengeLinks(driver):
         for problem in problems:
             key = GetElement(problem, By.XPATH, "div[1]/p/a[1]")
             value = GetElement(problem, By.XPATH, "div[6]/a")
+            attempt = '0'
+            try:
+                attemptString = (GetElement(problem, By.XPATH, "div[1]/p/a[2]").text).split()
+                attempt = attemptString[0][2:]
+            except:
+                attempt = '0'
+
             link = key.get_attribute('href') + value.get_attribute('href')[26:]
+
+            if (os.path.isdir(github + key.text)):
+                print("INFO - Folder %s exists. Skipping folder creation." %(key.text))
+                with open(github + key.text + '/attempts.txt', 'r') as f:
+                    first_line = f.readline()
+                if first_line == attempt:
+                    print("INFO - Not updating %s since there has been no changes since last run." %(key.text))
+                    continue
+                else:
+                    with open(github + key.text + '/attempts.txt', 'w') as f:
+                        f.write(attempt)
+            else:
+                print("INFO - Folder %s does not exist. Setting up folder" %(key.text))
+                os.makedirs(github + key.text)
+                with open(github + key.text + '/attempts.txt', 'w+') as attemptFile:
+                    attemptFile.write(attempt)
             dictionaryOfProblems[key.text] = link
 
         rightPagination = GetElement(driver, By.XPATH, "//a[@data-analytics='Pagination' and @data-attr1='Right']")
@@ -86,17 +116,12 @@ def createAllChallengeLinks(driver):
 
 def navigateAndScrape(driver, links, github):
     for link in links.keys():
-        if (os.path.isdir(github + link)):
-            print("INFO - Folder %s exists. Skipping folder creation." %(link))
-        else:
-            print("INFO - Folder %s does not exist. Setting up Folder" %(link))
-            os.makedirs(github + link)
-
         print("INFO - Navigating to %s" %(links[link]))
         driver.get(links[link])
         time.sleep(1)
+
         source = driver.page_source
-        soup = BeautifulSoup(source, "lxml")
+        soup = BeautifulSoup(source,'lxml')
         soup.encode('utf-8')
         codeLines = soup.find_all("pre", attrs={'class':' CodeMirror-line '})
         with open(github+link+"/main.cpp", "w") as f:
@@ -120,28 +145,31 @@ def main():
         return 0
 
     loginInfo = getUserNameAndPassword()
-    driver = createSession(loginInfo)
+    driver = createSession(loginInfo, configLoad['chromedriver_location'])
     if not(driver):
         print("INFO - Selenium driver was not created. Ending Script.")
         return 0
 
-    links = createAllChallengeLinks(driver)
+    links = createAllChallengeLinks(driver, configLoad['hacker_rank_solution_folder'])
+
     if not(links):
-        print("INFO - No links on your submissions page for this account.")
+        print("INFO - No links on your submissions page for this account. Ending Program.")
+        return 0
 
     navigateAndScrape(driver, links, configLoad['hacker_rank_solution_folder'])
 
     if configLoad['push_to_github']:
         print "Push changes to Github branch enabled. Starting the process."
         repo = git.Repo(configLoad['hacker_rank_solution_folder'])
-        print repo.git.status()
         if 'Changes not staged for commit:' in repo.git.status():
             print "Uncommitted changes. Need to commit."
             repo.git.add('--all')
-            repo.git.commit(m=('Automated Update after fetching solutions on %s' %(datetime.datetime.now().strftime("%Y-%m-%d"))))
+            repo.git.commit(m=('Automated Update after fetching solutions on %s\\n' %(datetime.datetime.now().strftime("%Y-%m-%d"))))
             repo.git.push("origin", "master")
         else:
             print "No changes found. Ending Github update process."
+    else:
+        print("INFO - Github did not update with any changes because they were not pushed.")
 
 if __name__ == '__main__':
     main()
